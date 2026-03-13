@@ -195,6 +195,7 @@ success/failure signalling to Glue.
 | Malformed numerics | `cast()` then drop nulls | `cast()` returns null for invalid values; downstream drop catches them |
 | Terraform | Modular (s3, glue modules) | Reusable and easier to reason about than a single flat file |
 | Athena | Glue Catalog table + workgroup | Completes the full ELT cycle — output is immediately queryable |
+| Output path | `results/<timestamp>/` per run | Preserves run history; Athena accumulates all runs (duplicates). Use `results/latest/` or partitioning to avoid if needed |
 | `terraform.tfvars` | Never committed | Contains environment-specific values; documented in `.gitignore` |
 
 ---
@@ -387,6 +388,24 @@ aws s3 ls s3://$(cd infra/terraform && terraform output -raw data_bucket_name)/r
 
 ## Querying with Athena
 
+### Athena Duplicate Rows Across Job Runs
+
+The Athena table points to `s3://bucket/results/` and scans all Parquet files
+across every timestamped subfolder (e.g. `results/20260312_190027/`, `results/20260313_100000/`).
+Multiple runs on the same dataset will produce duplicate rows in Athena queries.
+
+This is intentional for now each run's output is preserved for traceability.
+
+**Known solutions (not implemented for simplicity):**
+
+- **Fixed output path** — Write to `results/latest/` instead of `results/<timestamp>/`.
+  Since the job uses `mode("overwrite")`, each run would cleanly replace the previous one.
+  Best for single-dataset pipelines where history isn't needed.
+
+- **Partitioned table** — Partition the Glue catalog table by `run_timestamp` so each run
+  is queryable independently (`WHERE run_timestamp = '...'`). Best for incremental
+  pipelines where run history matters.
+
 1. Open [Amazon Athena](https://console.aws.amazon.com/athena)
 2. Select workgroup: `aws-etl-pipeline-workgroup`
 3. Select database: `aws-etl-pipeline-db`
@@ -472,7 +491,7 @@ See `.github/workflows/ci.yml`.
 | `make upload-data` fails: "BUCKET not set" | Run `make deploy` first, or pass `BUCKET=your-bucket-name` |
 | `make run-job` fails: "JOB_NAME not set" | Run `make deploy` first, or pass `JOB_NAME=your-job-name` |
 | Terraform: `logs:CreateLogGroup` AccessDenied | Add CloudWatch Logs permissions to your IAM user (see Required IAM Permissions) |
-| Terraform: `BucketNotEmpty` on destroy | Bucket has `force_destroy = true`; run `make destroy` again. If it still fails, empty the bucket manually first |
+| Terraform: `BucketNotEmpty` on destroy | Empty the bucket first: `aws s3 rm s3://BUCKET --recursive`, then run `make destroy` |
 | CloudWatch log group shows 0 log streams | Job may not have run yet, or logs are in S3 (`spark-logs/`). Check Glue run status |
 | Athena: "Table not found" | Ensure the Glue job has run at least once so Parquet files exist under `results/` |
 
@@ -482,9 +501,17 @@ See `.github/workflows/ci.yml`.
 
 To remove all AWS resources created by this project:
 
-```bash
-make destroy
-```
+1. Empty the S3 bucket (required before destroy):
 
-This runs `terraform destroy` and removes the S3 bucket, Glue job, IAM
-role, CloudWatch log group, Glue Catalog, and Athena workgroup.
+   ```bash
+   aws s3 rm s3://$(cd infra/terraform && terraform output -raw data_bucket_name) --recursive
+   ```
+
+2. Run destroy:
+
+   ```bash
+   make destroy
+   ```
+
+This removes the S3 bucket, Glue job, IAM role, CloudWatch log group,
+Glue Catalog, and Athena workgroup.

@@ -38,6 +38,7 @@ def run_pipeline(
     base_path: str,
     output_path: str,
     metrics: JobMetrics,
+    glue_logger,
 ) -> None:
     """
     Execute the ETL pipeline: read, validate, transform, write.
@@ -52,7 +53,7 @@ def run_pipeline(
 
     total_input = sum(df.count() for df in raw.values())
     metrics.set_input_count(total_input)
-    logger.info("Total input rows: %d", total_input)
+    glue_logger.info(f"Total input rows: {total_input}")
 
     if total_input < MIN_INPUT_ROWS:
         raise ValueError(
@@ -77,10 +78,10 @@ def run_pipeline(
 
     final_df = joined_df.select(*FINAL_COLUMNS)
     metrics.set_output_count(output_count)
-    logger.info("Final output rows: %d", output_count)
+    glue_logger.info(f"Final output rows: {output_count}")
 
     final_df.write.mode("overwrite").parquet(output_path)
-    logger.info("Written to %s", output_path)
+    glue_logger.info(f"Written to {output_path}")
 
 
 args = getResolvedOptions(
@@ -93,6 +94,7 @@ spark = glue_context.spark_session
 job = Job(glue_context)
 job.init(args["JOB_NAME"], args)
 
+glue_logger = glue_context.get_logger()
 correlation_id = generate_correlation_id(args["JOB_NAME"])
 configure_structured_logging(correlation_id=correlation_id)
 
@@ -104,26 +106,28 @@ validate_job_args(bucket, source_prefix, output_prefix)
 
 if source_prefix == "dataset":
     source_prefix = get_latest_dataset_prefix(bucket, "dataset")
-    logger.info("Using latest dataset prefix: %s", source_prefix)
+    glue_logger.info(f"Using latest dataset prefix: {source_prefix}")
 
 base_path = f"s3://{bucket}/{source_prefix}"
 timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+# Output path includes timestamp per run. Note: Athena table at results/ will
+# accumulate all runs (duplicates across runs).
 output_path = f"s3://{bucket}/{output_prefix}/{timestamp}"
 metrics = JobMetrics(args["JOB_NAME"], correlation_id=correlation_id)
 
-logger.info("Source: %s | Output: %s", base_path, output_path)
+glue_logger.info(f"Source: {base_path} | Output: {output_path}")
 
 try:
-    run_pipeline(spark, base_path, output_path, metrics)
+    run_pipeline(spark, base_path, output_path, metrics, glue_logger)
     metrics.mark_success()
     job.commit()
-    logger.info("Glue job completed successfully")
+    glue_logger.info("Glue job completed successfully")
 
 except ValueError as ve:
     metrics.mark_failure(str(ve))
-    logger.error("Validation error: %s", str(ve))
+    glue_logger.error(f"Validation error: {ve}")
     raise
 except Exception as e:
     metrics.mark_failure(str(e))
-    logger.error("Unexpected failure: %s", str(e))
+    glue_logger.error(f"Unexpected failure: {e}")
     raise
