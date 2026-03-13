@@ -1,0 +1,3 @@
+aws_region        = "us-east-1"
+data_bucket_name  = "your-unique-bucket-name"
+project_name      = "aws-etl-pipeline"
