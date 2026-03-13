@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements-dev.txt
+
+      - name: Run tests
+        env:
+          SPARK_LOCAL_IP: "127.0.0.1"
+        run: make test
+
+      - name: Lint
+        run: |
+          flake8 glue_scripts/ tests/
+
+      - name: Format check
+        run: make format-check

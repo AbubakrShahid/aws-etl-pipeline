@@ -7,7 +7,6 @@ from typing import List
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
-
 DATA_DIR = Path(__file__).resolve().parents[1] / "data" / "brazilian_ecommerce"
 DATASET_FILES: List[str] = [
     "olist_customers_dataset.csv",
@@ -62,7 +61,11 @@ def main() -> None:
 
     missing_files = [name for name in DATASET_FILES if not (data_dir / name).is_file()]
     if missing_files:
-        logging.error("Missing required dataset files in %s: %s", data_dir, ", ".join(missing_files))
+        logging.error(
+            "Missing required dataset files in %s: %s",
+            data_dir,
+            ", ".join(missing_files),
+        )
         raise SystemExit(1)
 
     session_kwargs = {}
@@ -88,11 +91,12 @@ def main() -> None:
 
         uploaded_keys.append(key)
 
-    logging.info("Successfully uploaded %d files to bucket %s", len(uploaded_keys), bucket_name)
+    logging.info(
+        "Successfully uploaded %d files to bucket %s", len(uploaded_keys), bucket_name
+    )
     for key in uploaded_keys:
         logging.info("Uploaded object key: %s", key)
 
 
 if __name__ == "__main__":
     main()
-

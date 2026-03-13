@@ -1,3 +1,7 @@
-aws_region        = "us-east-1"
-data_bucket_name  = "your-unique-bucket-name"
-project_name      = "aws-etl-pipeline"
+aws_region             = "us-east-1"
+data_bucket_name       = "your-unique-bucket-name"
+project_name           = "aws-etl-pipeline"
+glue_version           = "4.0"
+glue_worker_type       = "G.1X"
+glue_number_of_workers = 2
+glue_log_retention_days = 14
